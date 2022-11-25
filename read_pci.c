@@ -6,6 +6,7 @@
 
  #define BUFFER_SIZE 1024
 
+static struct mutex mtx;
 
 static int vendor = 1;
 static int dev = 1;
@@ -36,6 +37,7 @@ static ssize_t read_proc(struct file *filp,
             size_t count,
             loff_t *ppos) {
 
+    mutex_lock(&mtx);
     char buf[BUFFER_SIZE];
     int len = 0;
     struct pci_dev* pd = pci_get_device(vendor, dev, NULL);
@@ -47,6 +49,7 @@ static ssize_t read_proc(struct file *filp,
             return -EIO;
         }
         *ppos = len;
+          mutex_unlock(&mtx);
         return len;
       }
 
@@ -58,6 +61,7 @@ static ssize_t read_proc(struct file *filp,
         return -EIO;
     }
     *ppos = len;
+      mutex_unlock(&mtx);
     return len;
 }
 
@@ -65,21 +69,26 @@ static ssize_t read_proc(struct file *filp,
 // zapis'
 static ssize_t write_proc(struct file *filp, const char __user *user, size_t
 count, loff_t *ppos) {
+  mutex_lock(&mtx);
+
     int argc, content_len;
     char buf[BUFFER_SIZE];
 
 
     if (*ppos > 0 || count > BUFFER_SIZE){
+        mutex_unlock(&mtx);
         return -EIO;
     }
 
     if( copy_from_user(buf, user, count) ) {
+        mutex_unlock(&mtx);
         return -EIO;
     }
 
     argc = sscanf(buf, "%d %d", &vendor, &dev);
 
     if (argc != 2){
+        mutex_unlock(&mtx);
         return -EINVAL;
     }
 
@@ -87,12 +96,14 @@ count, loff_t *ppos) {
 
     content_len = strlen(buf);
     *ppos = content_len;
+      mutex_unlock(&mtx);
     return content_len;
 }
 
 static int __init lab_driver_init(void) {
 
 
+      mutex_init(&mtx);
     proc = proc_create("lab_read_pci_dev", 0, NULL, &proc_operations);
 
     return 0;

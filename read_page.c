@@ -2,9 +2,11 @@
  #include <linux/proc_fs.h>
  #include <linux/pid.h>
  #include <linux/memblock.h>
+ #include <linux/mutex.h>
 
  #define BUFFER_SIZE 1024
 
+static struct mutex mtx;
 
 static int pid = 1;
 
@@ -83,7 +85,7 @@ static size_t write_page_struct(char __user *user,
         page_struct = find_page(mm, start);
         if (page_struct != NULL) {
             len += sprintf(buf + len, "flags = %ld\n", page_struct->flags);
-            len += sprintf(buf + len, "phys addr = %x\n", page_struct->mapping);
+            len += sprintf(buf + len, "addr_space = %p\n", page_struct->mapping);
             len += sprintf(buf + len, "virtual addr = %lx\n", start);
             break;
         }
@@ -101,7 +103,7 @@ static ssize_t read_proc(struct file *filp,
             char __user *user,
             size_t count,
             loff_t *ppos) {
-
+    mutex_lock(&mtx);
     char buf[BUFFER_SIZE];
     int len = 0;
     struct task_struct *ts = get_pid_task(find_get_pid(pid), PIDTYPE_PID);
@@ -123,6 +125,7 @@ static ssize_t read_proc(struct file *filp,
 
 
     *ppos = len;
+    mutex_unlock(&mtx);
     return len;
 }
 
@@ -130,21 +133,25 @@ static ssize_t read_proc(struct file *filp,
 // zapis'
 static ssize_t write_proc(struct file *filp, const char __user *user, size_t
 count, loff_t *ppos) {
+    mutex_lock(&mtx);
 
     int argc, content_len;
     char buf[BUFFER_SIZE];
 
 
     if (*ppos > 0 || count > BUFFER_SIZE){
+      mutex_unlock(&mtx);
         return -EIO;
     }
 
     if( copy_from_user(buf, user, count) ) {
+      mutex_unlock(&mtx);
         return -EIO;
     }
 
     argc = sscanf(buf, "%d", &pid);
     if (argc != 1){
+      mutex_unlock(&mtx);
         return -EINVAL;
     }
 
@@ -152,12 +159,13 @@ count, loff_t *ppos) {
 
     content_len = strlen(buf);
     *ppos = content_len;
+    mutex_unlock(&mtx);
     return content_len;
 }
 
 static int __init lab_driver_init(void) {
 
-
+    mutex_init(&mtx);
     proc_create("lab_read_page", 0, NULL, &proc_operations);
 
     return 0;
